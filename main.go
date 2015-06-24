@@ -16,7 +16,7 @@ import (
 	"strings"
 )
 
-var repoUrl = "http://koti.kapsi.fi/darkon/polloeskadroona/repo/updater.json"
+var repoUrl = "https://koti.kapsi.fi/darkon/polloeskadroona/repo/updater.json"
 
 type repository struct {
 	DownloadRoot string
@@ -64,7 +64,7 @@ func main() {
 
 func createRepo(dirName string, outputName string) {
 	newRepo := repository{}
-	newRepo.DownloadRoot = "http://koti.kapsi.fi/darkon/polloeskadroona/repo/"
+	newRepo.DownloadRoot = "https://koti.kapsi.fi/darkon/polloeskadroona/repo/"
 	filepath.Walk(dirName, func(wpath string, info os.FileInfo, err error) error {
 		if info.IsDir() {
 			return nil
