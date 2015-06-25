@@ -208,7 +208,7 @@ func updateFiles() {
 			continue
 		}
 
-		dl, err := os.OpenFile(rf.Name, os.O_RDWR|os.O_CREATE, 0644)
+		dl, err := os.OpenFile(rf.Name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
 		if err != nil {
 			fmt.Println(err)
 			downloadErrors += 1
