@@ -29,66 +29,66 @@ type repositoryFile struct {
 }
 
 func (f repositoryFile) HasValidPath() bool {
-	cpath, _ := os.Getwd()
-	abs_path, err := filepath.Abs(f.Name)
+	currentPath, _ := os.Getwd()
+	absolutePath, err := filepath.Abs(f.Name)
 	if err != nil {
 		fmt.Println("Unable to resolve path for", f.Name)
 		return false
 	}
-	cleaned := path.Clean(abs_path)
-	return strings.Contains(cleaned, cpath)
+	cleaned := path.Clean(absolutePath)
+	return strings.Contains(cleaned, currentPath)
 }
 
 func (f repositoryFile) CheckHash(i *os.File) bool {
-	calculatedHash := calculateHash(i)
-	return calculatedHash == f.Hash
+	return calculateHash(i) == f.Hash
 }
 
 func main() {
-	var cRepoUrl = flag.String("repoUrl", "", "Set URL to custom repository json")
-	var dirName = flag.String("createRepo", "", "Directory to create a repository json from")
-	var outputName = flag.String("output", "updater.json", "Name of the json file for -createRepo")
+	var flagRepoUrl = flag.String("repoUrl", "", "Set URL to custom repository json")
+	var flagDirectoryName = flag.String("createRepo", "", "Directory to create a repository json from")
+	var flagOutputName = flag.String("output", "updater.json", "Name of the json file for -createRepo")
 
 	flag.Parse()
 
-	if len(*cRepoUrl) > 0 {
-		repoUrl = *cRepoUrl
+	if len(*flagRepoUrl) > 0 {
+		repoUrl = *flagRepoUrl
 	}
 
-	if len(*dirName) == 0 {
+	if len(*flagDirectoryName) == 0 {
 		updateFiles()
 	} else {
-		createRepo(*dirName, *outputName)
+		createRepo(*flagDirectoryName, *flagOutputName)
 	}
 }
 
-func createRepo(dirName string, outputName string) {
+func createRepo(directoryName string, outputName string) {
 	newRepo := repository{}
 	newRepo.DownloadRoot = "https://koti.kapsi.fi/darkon/polloeskadroona/repo/"
-	filepath.Walk(dirName, func(wpath string, info os.FileInfo, err error) error {
+	filepath.Walk(directoryName, func(currentPath string, info os.FileInfo, err error) error {
 		if info.IsDir() {
 			return nil
 		}
 
-		f, open_err := os.Open(wpath)
-		if open_err != nil {
-			return open_err
+		currentFile, openError := os.Open(currentPath)
+		if openError != nil {
+			return openError
 		}
+		defer currentFile.Close()
 
-		hash := calculateHash(f)
-		uPath := filepath.ToSlash(wpath)
-		fmt.Println(uPath, ":", hash)
-		newRepo.Files = append(newRepo.Files, []string{uPath, hash})
+		hash := calculateHash(currentFile)
+		currentPathSlash := filepath.ToSlash(currentPath)
+		fmt.Println(currentPathSlash, ":", hash)
+		newRepo.Files = append(newRepo.Files, []string{currentPathSlash, hash})
 		return nil
 	})
 
-	json_content, m_err := json.Marshal(newRepo)
-	if m_err != nil {
-		fmt.Println(m_err)
+	repoBytes, marshalError := json.Marshal(newRepo)
+	if marshalError != nil {
+		fmt.Println(marshalError)
 		return
 	}
-	ioutil.WriteFile(outputName, json_content, 0644)
-	fmt.Println("\nWriting outout to", outputName)
+	ioutil.WriteFile(outputName, repoBytes, 0644)
+	fmt.Println("\nWriting output to", outputName)
 }
 
 // go doesn't have "str in []string" check built in
@@ -104,8 +104,8 @@ func stringInSlice(a string, list []string) bool {
 func updateFiles() {
 	fmt.Println("Repository:", repoUrl)
 
-	downloadRoot, files := getrepositoryContent()
-	if files == nil {
+	downloadRoot, listOfRepositoryFiles := getRepositoryContent()
+	if listOfRepositoryFiles == nil {
 		return
 	}
 
@@ -117,38 +117,41 @@ func updateFiles() {
 	fmt.Println("")
 
 	// check existing files and their checksum
-	for _, fi := range files {
+	for _, rf := range listOfRepositoryFiles {
 
-		if !fi.HasValidPath() {
+		if !rf.HasValidPath() {
 			// invalid path, ignore
 			continue
 		}
 
-		parts := strings.Split(fi.Name, "/")
-		if !stringInSlice(parts[0], directoriesToPrune) {
-			directoriesToPrune = append(directoriesToPrune, parts[0])
+		fmt.Print(rf.Name + " : ")
+		var rfStatus string
+
+		// collect directory name to list of directories for pruning
+		pathParts := strings.Split(rf.Name, "/")
+		if !stringInSlice(pathParts[0], directoriesToPrune) {
+			directoriesToPrune = append(directoriesToPrune, pathParts[0])
 		}
 
-		f, err := os.Open(fi.Name)
+		existingFile, openError := os.Open(rf.Name)
 
-		if err != nil {
-			fmt.Println(fi.Name, ": Download")
-			downloadFiles = append(downloadFiles, fi)
+		if os.IsNotExist(openError) {
+			downloadFiles = append(downloadFiles, rf)
+			fmt.Println("Download")
+			continue
+		} else if openError != nil {
+			fmt.Println("Skip:", openError)
 			continue
 		}
-		defer f.Close()
 
-		var status string
-		fmt.Printf(fi.Name + " : ")
-
-		if fi.CheckHash(f) {
-			status = "OK"
+		if rf.CheckHash(existingFile) {
+			rfStatus = "OK"
 		} else {
-			status = "Download (Changed)"
-			downloadFiles = append(downloadFiles, fi)
+			rfStatus = "Download (Changed)"
+			downloadFiles = append(downloadFiles, rf)
 		}
-
-		fmt.Println(status)
+		existingFile.Close()
+		fmt.Println(rfStatus)
 	}
 
 	// remove any file that is not part of the repository. directories will
@@ -159,22 +162,21 @@ func updateFiles() {
 		if _, err := os.Stat(pruneDir); os.IsNotExist(err) {
 			continue
 		}
-		filepath.Walk(pruneDir, func(wpath string, info os.FileInfo, err error) error {
+		filepath.Walk(pruneDir, func(currentPath string, info os.FileInfo, err error) error {
 			if info.IsDir() {
 				return nil
 			}
-			uPath := filepath.ToSlash(wpath)
+			currentPathSlash := filepath.ToSlash(currentPath)
 			belongsToRepo := false
-			for _, fi := range files {
-				if uPath == fi.Name {
+			for _, rf := range listOfRepositoryFiles {
+				if currentPathSlash == rf.Name {
 					belongsToRepo = true
 				}
 			}
 			if !belongsToRepo {
-				fmt.Println("Removing", uPath)
-				remove_err := os.RemoveAll(uPath)
-				if remove_err != nil {
-					return remove_err
+				fmt.Println("Removing", currentPathSlash)
+				if removeError := os.RemoveAll(currentPathSlash); removeError != nil {
+					return removeError
 				}
 			}
 			return nil
@@ -195,9 +197,9 @@ func updateFiles() {
 		}
 
 		fullUrl := downloadRoot + rf.Name
-		response, get_err := http.Get(fullUrl)
-		if get_err != nil {
-			fmt.Println(get_err)
+		response, connectionError := http.Get(fullUrl)
+		if connectionError != nil {
+			fmt.Println(connectionError)
 			downloadErrors += 1
 			continue
 		}
@@ -208,26 +210,32 @@ func updateFiles() {
 			continue
 		}
 
-		dl, err := os.OpenFile(rf.Name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
-		if err != nil {
-			fmt.Println(err)
+		// create file if doesn't exist, truncate any existing bytes
+		downloadTarget, openError := os.OpenFile(rf.Name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
+		if openError != nil {
+			fmt.Println(openError)
 			downloadErrors += 1
 			continue
 		}
-		defer dl.Close()
 
-		r := bufio.NewReader(response.Body)
-		r.WriteTo(dl)
+		reader := bufio.NewReader(response.Body)
+		_, writeError := reader.WriteTo(downloadTarget)
+		if writeError == nil {
+			// seek to beginning or the next CheckHash fails
+			downloadTarget.Seek(0, 0)
 
-		// seek to beginning or the next CheckHash fails
-		dl.Seek(0, 0)
-
-		if rf.CheckHash(dl) {
-			fmt.Println("OK")
+			if rf.CheckHash(downloadTarget) {
+				fmt.Println("OK")
+			} else {
+				fmt.Println("Checksum failed")
+				downloadErrors += 1
+			}
 		} else {
-			fmt.Println("Checksum failed")
+			fmt.Println(writeError)
 			downloadErrors += 1
 		}
+
+		downloadTarget.Close()
 		response.Body.Close()
 	}
 	fmt.Println("")
@@ -243,12 +251,12 @@ func updateFiles() {
 	bufio.NewReader(os.Stdin).ReadBytes('\n')
 }
 
-func getrepositoryContent() (string, []repositoryFile) {
+func getRepositoryContent() (string, []repositoryFile) {
 	var files []repositoryFile
 
-	response, get_err := http.Get(repoUrl)
-	if get_err != nil {
-		fmt.Println(get_err)
+	response, connectionError := http.Get(repoUrl)
+	if connectionError != nil {
+		fmt.Println(connectionError)
 		return "", nil
 	}
 
@@ -258,25 +266,25 @@ func getrepositoryContent() (string, []repositoryFile) {
 		return "", nil
 	}
 
-	repo_bytes, read_err := ioutil.ReadAll(response.Body)
-	if read_err != nil {
-		fmt.Println(read_err)
+	repositoryBytes, readError := ioutil.ReadAll(response.Body)
+	if readError != nil {
+		fmt.Println(readError)
 		return "", nil
 	}
 
 	data := repository{}
-	json.Unmarshal(repo_bytes, &data)
+	json.Unmarshal(repositoryBytes, &data)
 
-	for _, v := range data.Files {
-		if len(v) != 2 {
+	for _, entry := range data.Files {
+		if len(entry) != 2 {
 			fmt.Println("Files entry does not contain 2 items")
 			continue
 		}
-		f := repositoryFile{
-			Name: v[0],
-			Hash: v[1],
+		newEntry := repositoryFile{
+			Name: entry[0],
+			Hash: entry[1],
 		}
-		files = append(files, f)
+		files = append(files, newEntry)
 	}
 	return data.DownloadRoot, files
 }
@@ -286,8 +294,8 @@ func calculateHash(f *os.File) string {
 	data := make([]byte, 1024*1024)
 
 	for {
-		_, err := f.Read(data)
-		if err == io.EOF {
+		_, readError := f.Read(data)
+		if readError == io.EOF {
 			break
 		}
 		hash.Write(data)
