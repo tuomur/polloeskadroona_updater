@@ -16,7 +16,7 @@ import (
 	"strings"
 )
 
-var repoUrl = "https://koti.kapsi.fi/darkon/polloeskadroona/repo/updater.json"
+var repoURL = "https://koti.kapsi.fi/darkon/polloeskadroona/repo/updater.json"
 
 type repository struct {
 	DownloadRoot string
@@ -44,14 +44,14 @@ func (f repositoryFile) CheckHash(i *os.File) bool {
 }
 
 func main() {
-	var flagRepoUrl = flag.String("repoUrl", "", "Set URL to custom repository json")
+	var flagRepoURL = flag.String("repoUrl", "", "Set URL to custom repository json")
 	var flagDirectoryName = flag.String("createRepo", "", "Directory to create a repository json from")
 	var flagOutputName = flag.String("output", "updater.json", "Name of the json file for -createRepo")
 
 	flag.Parse()
 
-	if len(*flagRepoUrl) > 0 {
-		repoUrl = *flagRepoUrl
+	if len(*flagRepoURL) > 0 {
+		repoURL = *flagRepoURL
 	}
 
 	if len(*flagDirectoryName) == 0 {
@@ -102,17 +102,17 @@ func stringInSlice(a string, list []string) bool {
 }
 
 func updateFiles() {
-	fmt.Println("Repository:", repoUrl)
+	fmt.Println("Repository:", repoURL)
 
 	downloadRoot, listOfRepositoryFiles := getRepositoryContent()
 	if listOfRepositoryFiles == nil {
 		return
 	}
 
-	downloadFiles := make([]repositoryFile, 0)
+	var downloadFiles []repositoryFile
 	downloadErrors := 0
 
-	directoriesToPrune := make([]string, 0)
+	var directoriesToPrune []string
 
 	fmt.Println("")
 
@@ -189,24 +189,24 @@ func updateFiles() {
 
 		fmt.Print("Downloading ", rf.Name, " ... ")
 
-		mkdir_err := os.MkdirAll(filepath.Dir(rf.Name), os.ModeDir)
-		if mkdir_err != nil {
-			fmt.Println("Unable to create directory for ", rf.Name, " : ", mkdir_err)
-			downloadErrors += 1
+		makeDirError := os.MkdirAll(filepath.Dir(rf.Name), os.ModeDir)
+		if makeDirError != nil {
+			fmt.Println("Unable to create directory for ", rf.Name, " : ", makeDirError)
+			downloadErrors++
 			continue
 		}
 
-		fullUrl := downloadRoot + rf.Name
-		response, connectionError := http.Get(fullUrl)
+		fullURL := downloadRoot + rf.Name
+		response, connectionError := http.Get(fullURL)
 		if connectionError != nil {
 			fmt.Println(connectionError)
-			downloadErrors += 1
+			downloadErrors++
 			continue
 		}
 
 		if response.StatusCode != 200 {
 			fmt.Println("HTTP", response.StatusCode)
-			downloadErrors += 1
+			downloadErrors++
 			continue
 		}
 
@@ -214,7 +214,7 @@ func updateFiles() {
 		downloadTarget, openError := os.OpenFile(rf.Name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
 		if openError != nil {
 			fmt.Println(openError)
-			downloadErrors += 1
+			downloadErrors++
 			continue
 		}
 
@@ -222,17 +222,17 @@ func updateFiles() {
 		_, writeError := reader.WriteTo(downloadTarget)
 		if writeError == nil {
 			// seek to beginning or the next CheckHash fails
-			downloadTarget.Seek(0, 0)
+			downloadTarget.Seek(0, os.SEEK_SET)
 
 			if rf.CheckHash(downloadTarget) {
 				fmt.Println("OK")
 			} else {
 				fmt.Println("Checksum failed")
-				downloadErrors += 1
+				downloadErrors++
 			}
 		} else {
 			fmt.Println(writeError)
-			downloadErrors += 1
+			downloadErrors++
 		}
 
 		downloadTarget.Close()
@@ -254,14 +254,14 @@ func updateFiles() {
 func getRepositoryContent() (string, []repositoryFile) {
 	var files []repositoryFile
 
-	response, connectionError := http.Get(repoUrl)
+	response, connectionError := http.Get(repoURL)
 	if connectionError != nil {
 		fmt.Println(connectionError)
 		return "", nil
 	}
 
 	if response.StatusCode != 200 {
-		fmt.Println("Unable to get repository data from", repoUrl)
+		fmt.Println("Unable to get repository data from", repoURL)
 		fmt.Println("HTTP status code", response.StatusCode)
 		return "", nil
 	}
