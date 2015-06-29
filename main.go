@@ -44,42 +44,49 @@ func (f repositoryFile) CheckHash(i *os.File) bool {
 
 func main() {
 	var flagRepoURL = flag.String("repoUrl", "", "Set URL to custom repository json")
-	var flagDirectoryName = flag.String("createRepo", "", "Directory to create a repository json from")
+	var flagCreateRepo = flag.Bool("createRepo", false, "Create updater.json instead of updating files")
 	var flagOutputName = flag.String("output", "updater.json", "Name of the json file for -createRepo")
 
 	flag.Parse()
+	directoryNames := flag.Args()
 
 	if len(*flagRepoURL) > 0 {
 		repoURL = *flagRepoURL
 	}
 
-	if len(*flagDirectoryName) == 0 {
-		updateFiles()
+	if *flagCreateRepo {
+		createRepo(directoryNames, *flagOutputName)
 	} else {
-		createRepo(*flagDirectoryName, *flagOutputName)
+		updateFiles()
 	}
 }
 
-func createRepo(directoryName string, outputName string) {
+func createRepo(directoryNames []string, outputName string) {
 	newRepo := repository{}
 	newRepo.DownloadRoot = "https://koti.kapsi.fi/darkon/polloeskadroona/repo/"
-	filepath.Walk(directoryName, func(currentPath string, info os.FileInfo, err error) error {
-		if info.IsDir() {
+	for _, directoryName := range directoryNames {
+		if _, statError := os.Stat(directoryName); os.IsNotExist(statError) {
+			fmt.Println(statError)
+			continue
+		}
+		filepath.Walk(directoryName, func(currentPath string, info os.FileInfo, err error) error {
+			if info.IsDir() {
+				return nil
+			}
+
+			currentFile, openError := os.Open(currentPath)
+			if openError != nil {
+				return openError
+			}
+			defer currentFile.Close()
+
+			hash := calculateHash(currentFile)
+			currentPathSlash := filepath.ToSlash(currentPath)
+			fmt.Println(currentPathSlash, ":", hash)
+			newRepo.Files = append(newRepo.Files, []string{currentPathSlash, hash})
 			return nil
-		}
-
-		currentFile, openError := os.Open(currentPath)
-		if openError != nil {
-			return openError
-		}
-		defer currentFile.Close()
-
-		hash := calculateHash(currentFile)
-		currentPathSlash := filepath.ToSlash(currentPath)
-		fmt.Println(currentPathSlash, ":", hash)
-		newRepo.Files = append(newRepo.Files, []string{currentPathSlash, hash})
-		return nil
-	})
+		})
+	}
 
 	repoBytes, marshalError := json.Marshal(newRepo)
 	if marshalError != nil {
