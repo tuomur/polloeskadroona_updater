@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -291,15 +290,10 @@ func getRepositoryContent() (string, []repositoryFile) {
 
 func calculateHash(f *os.File) string {
 	hash := sha1.New()
-	data := make([]byte, 1024*1024)
 
-	for {
-		_, readError := f.Read(data)
-		if readError == io.EOF {
-			break
-		}
-		hash.Write(data)
-	}
+	reader := bufio.NewReader(f)
+	reader.WriteTo(hash)
+
 	calculated := hash.Sum(nil)
 	return hex.EncodeToString(calculated)
 }
